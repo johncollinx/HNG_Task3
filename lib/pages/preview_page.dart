@@ -21,9 +21,9 @@ const int SPI_SETDESKWALLPAPER = 20;
 const int SPIF_UPDATEINIFILE = 0x01;
 const int SPIF_SENDCHANGE = 0x02;
 
-typedef SystemParametersInfoNative = Bool Function(
+typedef SystemParametersInfoNative = Int32 Function(
     Uint32 uiAction, Uint32 uiParam, Pointer<Utf16> pvParam, Uint32 fWinIni);
-typedef SystemParametersInfoDart = bool Function(
+typedef SystemParametersInfoDart = int Function(
     int uiAction, int uiParam, Pointer<Utf16> pvParam, int fWinIni);
 
 class WallpaperStudioPage extends ConsumerStatefulWidget {
@@ -71,8 +71,9 @@ class _WallpaperStudioPageState extends ConsumerState<WallpaperStudioPage> {
     final original = img.decodeImage(bytes);
     if (original == null) throw Exception('Failed to decode image');
 
-    final width = GetSystemMetrics(SM_CXSCREEN);
-    final height = GetSystemMetrics(SM_CYSCREEN);
+    // Use GetSystemMetrics safely
+    final width = Platform.isWindows ? GetSystemMetrics(SM_CXSCREEN) : original.width;
+    final height = Platform.isWindows ? GetSystemMetrics(SM_CYSCREEN) : original.height;
     final scale = max(width / original.width, height / original.height);
 
     final resized = img.copyResize(
@@ -96,7 +97,7 @@ class _WallpaperStudioPageState extends ConsumerState<WallpaperStudioPage> {
           SPI_SETDESKWALLPAPER, 0, ptr, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
       calloc.free(ptr);
 
-      if (!result) throw Exception('Failed to set wallpaper');
+      if (result == 0) throw Exception('Failed to set wallpaper');
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
