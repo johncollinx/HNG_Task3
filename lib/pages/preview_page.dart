@@ -21,9 +21,9 @@ const int SPI_SETDESKWALLPAPER = 20;
 const int SPIF_UPDATEINIFILE = 0x01;
 const int SPIF_SENDCHANGE = 0x02;
 
-typedef SystemParametersInfoNative = Int32 Function(
+typedef SystemParametersInfoNative = Bool Function(
     Uint32 uiAction, Uint32 uiParam, Pointer<Utf16> pvParam, Uint32 fWinIni);
-typedef SystemParametersInfoDart = int Function(
+typedef SystemParametersInfoDart = bool Function(
     int uiAction, int uiParam, Pointer<Utf16> pvParam, int fWinIni);
 
 class WallpaperStudioPage extends ConsumerStatefulWidget {
@@ -71,19 +71,23 @@ class _WallpaperStudioPageState extends ConsumerState<WallpaperStudioPage> {
     final original = img.decodeImage(bytes);
     if (original == null) throw Exception('Failed to decode image');
 
-    // Use GetSystemMetrics safely
-    final width = Platform.isWindows ? GetSystemMetrics(SM_CXSCREEN) : original.width;
-    final height = Platform.isWindows ? GetSystemMetrics(SM_CYSCREEN) : original.height;
-    final scale = max(width / original.width, height / original.height);
+    // Screen size for Windows or fallback to original image size
+    final screenWidth = Platform.isWindows ? GetSystemMetrics(SM_CXSCREEN) : original.width;
+    final screenHeight = Platform.isWindows ? GetSystemMetrics(SM_CYSCREEN) : original.height;
 
-    final resized = img.copyResize(
-      original,
-      width: (original.width * scale).round(),
-      height: (original.height * scale).round(),
-    );
+    // Compute scaling factor to preserve aspect ratio
+    final widthRatio = screenWidth / original.width;
+    final heightRatio = screenHeight / original.height;
+    final scale = max(widthRatio, heightRatio);
+
+    final newWidth = (original.width * scale).round();
+    final newHeight = (original.height * scale).round();
+
+    final resized = img.copyResize(original, width: newWidth, height: newHeight);
 
     final file = File('${Directory.systemTemp.path}/temp_wallpaper.jpg');
     await file.writeAsBytes(img.encodeJpg(resized, quality: 95));
+
     return file.path;
   }
 
@@ -97,7 +101,7 @@ class _WallpaperStudioPageState extends ConsumerState<WallpaperStudioPage> {
           SPI_SETDESKWALLPAPER, 0, ptr, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
       calloc.free(ptr);
 
-      if (result == 0) throw Exception('Failed to set wallpaper');
+      if (!result) throw Exception('Failed to set wallpaper');
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -132,7 +136,7 @@ class _WallpaperStudioPageState extends ConsumerState<WallpaperStudioPage> {
       body: SafeArea(
         child: Column(
           children: [
-            // 🔝 Top Navigation Bar
+            // Top Navigation Bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
               child: Row(
@@ -183,229 +187,204 @@ class _WallpaperStudioPageState extends ConsumerState<WallpaperStudioPage> {
 
             // Main Content
             Expanded(
-              child: Stack(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Left Grid
-                      Expanded(
-                        flex: 3,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 40, vertical: 20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.category,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                  // Left Grid
+                  Expanded(
+                    flex: 3,
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.category,
+                            style: GoogleFonts.poppins(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Expanded(
+                            child: GridView.builder(
+                              itemCount: widget.wallpapers.length,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                mainAxisSpacing: 20,
+                                crossAxisSpacing: 20,
+                                childAspectRatio: 0.68,
                               ),
-                              const SizedBox(height: 20),
-                              Expanded(
-                                child: GridView.builder(
-                                  itemCount: widget.wallpapers.length,
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 3,
-                                    mainAxisSpacing: 20,
-                                    crossAxisSpacing: 20,
-                                    childAspectRatio: 0.68,
-                                  ),
-                                  itemBuilder: (context, index) {
-                                    final wall = widget.wallpapers[index];
-                                    final selectedNow = selectedIndex == index;
-                                    final fav =
-                                        favourites.any((w) => w.id == wall.id);
+                              itemBuilder: (context, index) {
+                                final wall = widget.wallpapers[index];
+                                final selectedNow = selectedIndex == index;
+                                final fav =
+                                    favourites.any((w) => w.id == wall.id);
 
-                                    return GestureDetector(
-                                      onTap: () =>
-                                          setState(() => selectedIndex = index),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                          image: DecorationImage(
-                                            image: AssetImage(wall.image),
-                                            fit: BoxFit.cover,
+                                return GestureDetector(
+                                  onTap: () => setState(() => selectedIndex = index),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      image: DecorationImage(
+                                        image: AssetImage(wall.image),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                    child: Stack(
+                                      children: [
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(16),
+                                            color: selectedNow
+                                                ? Colors.black.withOpacity(0.35)
+                                                : Colors.black.withOpacity(0.2),
                                           ),
                                         ),
-                                        child: Stack(
-                                          children: [
-                                            Container(
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(16),
-                                                color: selectedNow
-                                                    ? Colors.black
-                                                        .withOpacity(0.35)
-                                                    : Colors.black
-                                                        .withOpacity(0.2),
-                                              ),
-                                            ),
-                                            Positioned(
-                                              bottom: 10,
-                                              left: 10,
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    wall.title,
-                                                    style: GoogleFonts.poppins(
-                                                      color: Colors.white,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 14,
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    widget.category,
-                                                    style: GoogleFonts.poppins(
-                                                      color: Colors.white70,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            Positioned(
-                                              top: 10,
-                                              right: 10,
-                                              child: GestureDetector(
-                                                onTap: () =>
-                                                    notifier.toggle(wall),
-                                                child: Icon(
-                                                  Icons.favorite,
-                                                  color: fav
-                                                      ? Colors.amber
-                                                      : Colors.white70,
+                                        Positioned(
+                                          bottom: 10,
+                                          left: 10,
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                wall.title,
+                                                style: GoogleFonts.poppins(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
                                                 ),
                                               ),
-                                            ),
-                                          ],
+                                              Text(
+                                                widget.category,
+                                                style: GoogleFonts.poppins(
+                                                  color: Colors.white70,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // Right Preview
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          margin: const EdgeInsets.only(
-                              top: 20, right: 30, bottom: 20),
-                          padding: const EdgeInsets.all(30),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.08),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Preview',
-                                  style: GoogleFonts.poppins(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 20),
-                              Center(
-                                child: Container(
-                                  width: 220,
-                                  height: 180,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    image: DecorationImage(
-                                      image: AssetImage(selected.image),
-                                      fit: BoxFit.cover,
+                                        Positioned(
+                                          top: 10,
+                                          right: 10,
+                                          child: GestureDetector(
+                                            onTap: () => notifier.toggle(wall),
+                                            child: Icon(
+                                              Icons.favorite,
+                                              color: fav ? Colors.amber : Colors.white70,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    border: Border.all(
-                                        color: Colors.black12, width: 2),
                                   ),
-                                ),
-                              ),
-                              const SizedBox(height: 25),
-                              Text(selected.title,
-                                  style: GoogleFonts.poppins(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 18)),
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                children: selected.tags.map(_buildTag).toList(),
-                              ),
-                              const SizedBox(height: 20),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: Text(selected.description,
-                                      style: GoogleFonts.poppins(
-                                          fontSize: 13.5,
-                                          color: Colors.grey[700],
-                                          height: 1.6)),
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              OutlinedButton.icon(
-                                onPressed: () => notifier.toggle(selected),
-                                icon: Icon(
-                                  isFavourite
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  color: isFavourite
-                                      ? Colors.amber
-                                      : Colors.black54,
-                                ),
-                                label: Text(
-                                  isFavourite ? 'Saved' : 'Save to Favorites',
-                                  style: GoogleFonts.poppins(
-                                      fontWeight: FontWeight.w500),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.black26),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-
-                              // 🔹 Set Wallpaper Button
-                              ElevatedButton(
-                                onPressed: () =>
-                                    _setWallpaper(selected.image),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFFFB23F),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                  elevation: 0,
-                                ),
-                                child: Text('Set Wallpaper',
-                                    style: GoogleFonts.poppins(
-                                        fontWeight: FontWeight.w600)),
-                              ),
-                            ],
+                                );
+                              },
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
+                  ),
+
+                  // Right Preview
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      margin:
+                          const EdgeInsets.only(top: 20, right: 30, bottom: 20),
+                      padding: const EdgeInsets.all(30),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Preview',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 22, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 20),
+                          Center(
+                            child: Container(
+                              width: 220,
+                              height: 180,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                image: DecorationImage(
+                                  image: AssetImage(selected.image),
+                                  fit: BoxFit.cover,
+                                ),
+                                border: Border.all(color: Colors.black12, width: 2),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 25),
+                          Text(selected.title,
+                              style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w600, fontSize: 18)),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            children: selected.tags.map(_buildTag).toList(),
+                          ),
+                          const SizedBox(height: 20),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Text(selected.description,
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 13.5,
+                                      color: Colors.grey[700],
+                                      height: 1.6)),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          OutlinedButton.icon(
+                            onPressed: () => notifier.toggle(selected),
+                            icon: Icon(
+                              isFavourite ? Icons.favorite : Icons.favorite_border,
+                              color: isFavourite ? Colors.amber : Colors.black54,
+                            ),
+                            label: Text(
+                              isFavourite ? 'Saved' : 'Save to Favorites',
+                              style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.black26),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Set Wallpaper Button
+                          ElevatedButton(
+                            onPressed: () => _setWallpaper(selected.image),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFB23F),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                            child: Text('Set Wallpaper',
+                                style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
