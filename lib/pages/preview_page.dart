@@ -16,6 +16,11 @@ import '../providers/favourites_provider.dart';
 import '../providers/preview_drawer_provider.dart';
 import '../widgets/top_nav_button.dart';
 
+// Windows wallpaper constants
+const int SPI_SETDESKWALLPAPER = 20;
+const int SPIF_UPDATEINIFILE = 0x01;
+const int SPIF_SENDCHANGE = 0x02;
+
 typedef SystemParametersInfoNative = Bool Function(
     Uint32 uiAction, Uint32 uiParam, Pointer<Utf16> pvParam, Uint32 fWinIni);
 typedef SystemParametersInfoDart = bool Function(
@@ -88,7 +93,7 @@ class _WallpaperStudioPageState extends ConsumerState<WallpaperStudioPage> {
       final path = await _prepareWallpaper(assetPath);
       final ptr = path.toNativeUtf16();
       final result = _systemParametersInfo(
-          20, 0, ptr, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+          SPI_SETDESKWALLPAPER, 0, ptr, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
       calloc.free(ptr);
 
       if (!result) throw Exception('Failed to set wallpaper');
